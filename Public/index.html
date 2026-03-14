@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampusChat - Multi-Client App</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4F46E5; --primary-hover: #4338CA; --bg-main: #f3f4f6; 
+            --bg-card: #ffffff; --text-main: #111827; --text-muted: #6b7280;
+            --border: #e5e7eb; --sys-warn: #f59e0b; --sys-sooth: #10b981;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-main); height: 100vh; display: flex; align-items: center; justify-content: center; }
+        
+        /* LOGIN */
+        #loginSection { background: var(--bg-card); padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center; width: 350px; }
+        #loginSection input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; }
+        button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 500; }
+        button:hover { background: var(--primary-hover); }
+
+        /* APP LAYOUT */
+        #appSection { display: none; width: 100%; max-width: 1200px; height: 90vh; background: var(--bg-card); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); display: flex; }
+        
+        /* SIDEBAR */
+        .sidebar { width: 280px; background: #f9fafb; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
+        .sidebar-header h3 { font-size: 18px; color: var(--primary); }
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 10px 0; }
+        .list-group { padding: 0 10px; margin-bottom: 20px; }
+        .list-group h4 { font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin: 10px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .add-btn { background: #e5e7eb; color: var(--text-main); border: none; border-radius: 4px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: bold;}
+        .add-btn:hover { background: #d1d5db; }
+
+        .list-item { padding: 10px; margin: 2px 0; border-radius: 8px; cursor: pointer; font-size: 14px; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+        .list-item:hover { background: #e5e7eb; }
+        .list-item.active { background: var(--primary); color: white; }
+        
+        /* CHAT AREA */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        .chat-header { padding: 20px; border-bottom: 1px solid var(--border); font-weight: 600; display: flex; justify-content: space-between; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        
+        .message { max-width: 70%; display: flex; flex-direction: column; }
+        .message.self { align-self: flex-end; align-items: flex-end; }
+        .message .meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+        .message .bubble { padding: 12px 16px; border-radius: 12px; background: var(--bg-main); font-size: 14px; line-height: 1.4; color: var(--text-main); word-wrap: break-word;}
+        .message.self .bubble { background: var(--primary); color: white; }
+        .message img { max-width: 100%; border-radius: 8px; margin-top: 8px; }
+        
+        /* SYSTEM MESSAGES */
+        .sys-msg { text-align: center; font-size: 12px; margin: 10px 0; color: var(--text-muted); font-style: italic; align-self: center;}
+        .sys-msg.soothing { background: #ecfdf5; color: var(--sys-sooth); padding: 8px 15px; border-radius: 20px; border: 1px solid #a7f3d0; }
+
+        /* INPUT AREA */
+        .input-area { padding: 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; background: #f9fafb; }
+        .input-area input[type="text"] { flex: 1; padding: 12px 15px; border: 1px solid var(--border); border-radius: 20px; font-size: 14px; }
+        .file-btn { background: #e5e7eb; color: var(--text-main); padding: 10px; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        #imageInput { display: none; }
+        
+        /* MODALS */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: white; padding: 25px; border-radius: 12px; width: 400px; text-align: center; }
+        .modal-btns { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+        .btn-danger { background: #ef4444; } .btn-danger:hover { background: #dc2626; }
+        .btn-secondary { background: #9ca3af; } .btn-secondary:hover { background: #6b7280; }
+        .btn-primary { background: var(--primary); }
+
+        /* Create Group Specific Styles */
+        .member-checkbox-list { text-align: left; max-height: 150px; overflow-y: auto; margin-top: 15px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: #f9fafb; }
+        .member-checkbox-list label { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 14px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="loginSection">
+        <h2>CampusChat</h2>
+        <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">Login or create an account</p>
+        
+        <input type="text" id="usernameInput" placeholder="Username (e.g. JohnDoe)">
+        <input type="password" id="passwordInput" placeholder="Password" onkeypress="if(event.key === 'Enter') authenticate(true)">
+        
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="authenticate(true)" style="flex: 1;">Login</button>
+            <button onclick="authenticate(false)" style="flex: 1; background: #9ca3af;">Sign Up</button>
+        </div>
+    </div>
+
+    <div id="appSection" style="display: none;">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>CampusChat</h3>
+                <div style="font-size: 12px; margin-top: 4px; color: var(--text-muted);">Logged in as <b id="myName"></b></div>
+            </div>
+            <div class="sidebar-content">
+                <div class="list-group">
+                    <h4>
+                        Chatrooms 
+                        <button class="add-btn" onclick="openCreateGroupModal()" title="Create Group">+</button>
+                    </h4>
+                    <div id="roomList"></div>
+                </div>
+                <div class="list-group">
+                    <h4>Direct Messages</h4>
+                    <div id="userList"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header">
+                <span id="chatTitle"># General</span>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="sys-msg">Loading history...</div>
+            </div>
+            
+            <div class="input-area">
+                <label for="imageInput" class="file-btn" title="Send Image">📷</label>
+                <input type="file" id="imageInput" accept="image/*">
+                
+                <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key === 'Enter') prepareSend()">
+                <button onclick="prepareSend()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="otpModal">
+        <div class="modal">
+            <h3>Privacy Alert</h3>
+            <p id="otpWarningText" style="margin: 15px 0; font-size: 14px; color: var(--text-muted);"></p>
+            <div class="modal-btns">
+                <button class="btn-secondary" onclick="cancelOTP()">Cancel</button>
+                <button class="btn-danger" onclick="confirmOTP()">Send Anyway</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="createGroupModal">
+        <div class="modal">
+            <h3>Create New Group</h3>
+            <input type="text" id="newGroupName" placeholder="Enter group name" style="width: 100%; padding: 10px; margin-top: 15px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            
+            <div class="member-checkbox-list" id="groupMembersList">
+                </div>
+            
+            <div class="modal-btns">
+                <button class="btn-secondary" onclick="closeCreateGroupModal()">Cancel</button>
+                <button class="btn-primary" onclick="submitCreateGroup()">Create Group</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myUsername = '';
+        let myId = '';
+        
+        let onlineUsersGlobal = []; 
+        let currentTarget = 'General';
+        let currentType = 'room'; 
+        let pendingOtpData = null;
+
+        // --- PREVENT GHOST SESSIONS ---
+        // If the server restarts, this forces the browser to reload so you don't get stuck sending invisible messages
+        socket.on('disconnect', () => {
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        });
+
+        function authenticate(isLogin) {
+            const username = document.getElementById('usernameInput').value.trim();
+            const password = document.getElementById('passwordInput').value.trim();
+
+            if (!username || !password) return alert("Please enter both username and password.");
+
+            // Request auth from backend
+            socket.emit('auth', { username, password, isLogin }, (response) => {
+                if (response.success) {
+                    myUsername = response.user.username;
+                    myId = response.user.id;
+                    
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('appSection').style.display = 'flex';
+                    document.getElementById('myName').innerText = myUsername;
+                } else {
+                    alert(response.message);
+                }
+            });
+        }
+
+        // --- Sidebar Updates ---
+        socket.on('updateSidebar', (data) => {
+            onlineUsersGlobal = data.users.filter(u => u.id !== myId);
+            
+            const roomList = document.getElementById('roomList');
+            roomList.innerHTML = data.rooms.map(room => 
+                `<div class="list-item ${currentTarget === room ? 'active' : ''}" onclick="switchChat('room', '${room}')"># ${room}</div>`
+            ).join('');
+
+            const userList = document.getElementById('userList');
+            userList.innerHTML = onlineUsersGlobal.map(u => 
+                `<div class="list-item ${currentTarget === u.id ? 'active' : ''}" onclick="switchChat('private', '${u.id}', '${u.username}')">👤 ${u.username}</div>`
+            ).join('');
+        });
+
+        // --- SWITCH CHAT & FETCH HISTORY ---
+        function switchChat(type, target, displayTitle) {
+            currentType = type;
+            currentTarget = target;
+            
+            document.getElementById('chatTitle').innerText = type === 'room' ? `# ${target}` : `Private: ${displayTitle}`;
+            document.getElementById('chatMessages').innerHTML = `<div class="sys-msg">Loading history...</div>`;
+            
+            document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
+            if(event) event.currentTarget.classList.add('active');
+
+            // Ask the server for the history of this specific chat
+            socket.emit('fetchHistory', { type, target });
+        }
+
+        // Render the fetched history
+        socket.on('chatHistory', (messages) => {
+            const chat = document.getElementById('chatMessages');
+            chat.innerHTML = `<div class="sys-msg">This is the start of your history.</div>`;
+            
+            messages.forEach(msg => {
+                const isSelf = msg.senderId === myId;
+                const imgHtml = msg.imageBase64 ? `<img src="${msg.imageBase64}">` : '';
+                chat.innerHTML += `
+                    <div class="message ${isSelf ? 'self' : ''}">
+                        <div class="meta">${isSelf ? 'You' : msg.sender} • ${msg.timestamp}</div>
+                        <div class="bubble">${msg.text} ${imgHtml}</div>
+                    </div>
+                `;
+            });
+            chat.scrollTop = chat.scrollHeight; 
+        });
+
+        // --- Create Group Logic ---
+        function openCreateGroupModal() {
+            const listDiv = document.getElementById('groupMembersList');
+            document.getElementById('newGroupName').value = ''; 
+            
+            // Filter out your own name so you don't have to check yourself
+            const availableUsers = onlineUsersGlobal.filter(u => u.username !== myUsername);
+            
+            if (availableUsers.length === 0) {
+                listDiv.innerHTML = "<div style='color: #6b7280; font-size: 12px;'>No other users are currently online to add.</div>";
+            } else {
+                listDiv.innerHTML = availableUsers.map(u => 
+                    `<label><input type="checkbox" value="${u.username}" class="group-cb"> ${u.username}</label>`
+                ).join('');
+            }
+            
+            document.getElementById('createGroupModal').style.display = 'flex';
+        }
+
+        function closeCreateGroupModal() {
+            document.getElementById('createGroupModal').style.display = 'none';
+        }
+
+        function submitCreateGroup() {
+            const groupName = document.getElementById('newGroupName').value.trim();
+            const checkedBoxes = document.querySelectorAll('.group-cb:checked');
+            const members = Array.from(checkedBoxes).map(cb => cb.value);
+
+            if (!groupName) return alert("Please enter a group name.");
+
+            // Automatically adds you to the group behind the scenes
+            members.push(myUsername);
+
+            socket.emit('createGroup', { groupName, members });
+            closeCreateGroupModal();
+            
+            switchChat('room', groupName);
+        }
+
+        // --- Sending Messages ---
+        function prepareSend() {
+            const textInput = document.getElementById('messageInput');
+            const fileInput = document.getElementById('imageInput');
+            const text = textInput.value.trim();
+            const file = fileInput.files[0];
+
+            if (!text && !file) return;
+
+            const payload = { type: currentType, target: currentTarget, text: text, imageBase64: null };
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    payload.imageBase64 = e.target.result;
+                    socket.emit('sendMessage', payload);
+                    fileInput.value = ''; 
+                };
+                reader.readAsDataURL(file);
+            } else {
+                socket.emit('sendMessage', payload);
+            }
+            textInput.value = ''; 
+        }
+
+        // --- Receiving Live Messages ---
+        socket.on('receiveMessage', (msg) => {
+            const belongsToCurrentRoom = msg.type === 'room' && msg.target === currentTarget;
+            const belongsToCurrentPrivate = msg.type === 'private' && (msg.target === currentTarget || msg.senderId === currentTarget);
+            
+            if (!belongsToCurrentRoom && !belongsToCurrentPrivate && msg.type !== 'system' && msg.type !== 'system_soothing') {
+                return; 
+            }
+
+            const chat = document.getElementById('chatMessages');
+            
+            if (msg.type === 'system') {
+                chat.innerHTML += `<div class="sys-msg">${msg.text}</div>`;
+            } else if (msg.type === 'system_soothing') {
+                chat.innerHTML += `<div class="sys-msg soothing">${msg.text}</div>`;
+            } else {
+                const isSelf = msg.senderId === myId;
+                const imgHtml = msg.imageBase64 ? `<img src="${msg.imageBase64}">` : '';
+                
+                chat.innerHTML += `
+                    <div class="message ${isSelf ? 'self' : ''}">
+                        <div class="meta">${isSelf ? 'You' : msg.sender} • ${msg.timestamp}</div>
+                        <div class="bubble">${msg.text} ${imgHtml}</div>
+                    </div>
+                `;
+            }
+            chat.scrollTop = chat.scrollHeight; 
+        });
+
+        // --- OTP Privacy Flow ---
+        socket.on('otpWarning', (data) => {
+            pendingOtpData = data.pendingData;
+            document.getElementById('otpWarningText').innerText = data.warning;
+            document.getElementById('otpModal').style.display = 'flex';
+        });
+
+        function confirmOTP() {
+            if (pendingOtpData) {
+                socket.emit('confirmSendMessage', pendingOtpData);
+                pendingOtpData = null;
+            }
+            document.getElementById('otpModal').style.display = 'none';
+        }
+
+        function cancelOTP() {
+            pendingOtpData = null;
+            document.getElementById('otpModal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
